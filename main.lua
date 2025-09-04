@@ -1,55 +1,7 @@
---[[
-    Pong Remake – Step 1
-    Basic paddles + ball movement
-    Controls:
-      Player 1 → W / S
-      Player 2 → Up / Down
-      Space → Reset ball
-      Esc → Quit
-]]
-
--- Window size
-WINDOW_WIDTH  = 1280
+WINDOW_WIDTH = 1280
 WINDOW_HEIGHT = 720
 
--- Paddle and ball sizes
-PADDLE_WIDTH  = 12
-PADDLE_HEIGHT = 64
-BALL_SIZE     = 10
-
--- Speeds
-PADDLE_SPEED  = 420
-BALL_SPEED_X  = 220
-BALL_SPEED_Y  = 120
-
--- Game objects
-local p1 = { x = 32, y = (WINDOW_HEIGHT - PADDLE_HEIGHT) / 2 }
-local p2 = { x = WINDOW_WIDTH - 32 - PADDLE_WIDTH, y = (WINDOW_HEIGHT - PADDLE_HEIGHT) / 2 }
-local ball = {
-    x = WINDOW_WIDTH / 2 - BALL_SIZE / 2,
-    y = WINDOW_HEIGHT / 2 - BALL_SIZE / 2,
-    dx = BALL_SPEED_X,
-    dy = BALL_SPEED_Y
-}
-
--- Clamp function
-local function clamp(v, min, max)
-    if v < min then return min end
-    if v > max then return max end
-    return v
-end
-
--- Reset ball to center
-local function resetBall()
-    ball.x = WINDOW_WIDTH / 2 - BALL_SIZE / 2
-    ball.y = WINDOW_HEIGHT / 2 - BALL_SIZE / 2
-
-    local dirX = love.math.random() < 0.5 and -1 or 1
-    local dirY = love.math.random() < 0.5 and -1 or 1
-
-    ball.dx = dirX * BALL_SPEED_X
-    ball.dy = dirY * BALL_SPEED_Y
-end
+PADDLE_SPEED = 500
 
 function love.load()
     love.window.setMode(WINDOW_WIDTH, WINDOW_HEIGHT, {
@@ -59,77 +11,115 @@ function love.load()
     })
 
     love.graphics.setDefaultFilter('nearest', 'nearest')
-    love.math.setRandomSeed(os.time())
+    math.randomseed(os.time())
 
-    smallFont = love.graphics.newFont(16)
-    largeFont = love.graphics.newFont(24)
-    love.graphics.setFont(smallFont)
+    -- load fonts
+    smallFont = love.graphics.newFont(20)
+    scoreFont = love.graphics.newFont(32)
+
+    -- load sounds
+    sounds = {
+        ['bounce'] = love.audio.newSource('bounce.wav', 'static'),
+        ['score']  = love.audio.newSource('score.wav', 'static')
+    }
+
+    player1Score = 0
+    player2Score = 0
+
+    player1 = { x = 50, y = 30, width = 20, height = 100 }
+    player2 = { x = WINDOW_WIDTH - 70, y = WINDOW_HEIGHT - 130, width = 20, height = 100 }
+
+    ball = {
+        x = WINDOW_WIDTH / 2 - 10,
+        y = WINDOW_HEIGHT / 2 - 10,
+        width = 20,
+        height = 20,
+        dx = math.random(2) == 1 and 300 or -300,
+        dy = math.random(-50, 50)
+    }
+
+    gameState = 'play'
 end
 
 function love.update(dt)
-    -- Player 1
+    -- Player 1 movement
     if love.keyboard.isDown('w') then
-        p1.y = p1.y - PADDLE_SPEED * dt
+        player1.y = math.max(0, player1.y - PADDLE_SPEED * dt)
     elseif love.keyboard.isDown('s') then
-        p1.y = p1.y + PADDLE_SPEED * dt
+        player1.y = math.min(WINDOW_HEIGHT - player1.height, player1.y + PADDLE_SPEED * dt)
     end
 
-    -- Player 2
+    -- Player 2 movement
     if love.keyboard.isDown('up') then
-        p2.y = p2.y - PADDLE_SPEED * dt
+        player2.y = math.max(0, player2.y - PADDLE_SPEED * dt)
     elseif love.keyboard.isDown('down') then
-        p2.y = p2.y + PADDLE_SPEED * dt
+        player2.y = math.min(WINDOW_HEIGHT - player2.height, player2.y + PADDLE_SPEED * dt)
     end
 
-    -- Keep paddles on screen
-    p1.y = clamp(p1.y, 0, WINDOW_HEIGHT - PADDLE_HEIGHT)
-    p2.y = clamp(p2.y, 0, WINDOW_HEIGHT - PADDLE_HEIGHT)
-
-    -- Move ball
+    -- Ball movement
     ball.x = ball.x + ball.dx * dt
     ball.y = ball.y + ball.dy * dt
 
-    -- Bounce top/bottom
+    -- Ball collision with top/bottom walls
     if ball.y <= 0 then
         ball.y = 0
         ball.dy = -ball.dy
-    elseif ball.y + BALL_SIZE >= WINDOW_HEIGHT then
-        ball.y = WINDOW_HEIGHT - BALL_SIZE
+        sounds['bounce']:play()
+    elseif ball.y >= WINDOW_HEIGHT - ball.height then
+        ball.y = WINDOW_HEIGHT - ball.height
         ball.dy = -ball.dy
+        sounds['bounce']:play()
     end
 
-    -- Reset if ball goes out
-    if ball.x + BALL_SIZE < 0 or ball.x > WINDOW_WIDTH then
+    -- Ball collision with paddles
+    if checkCollision(ball, player1) then
+        ball.x = player1.x + player1.width
+        ball.dx = -ball.dx * 1.03
+        sounds['bounce']:play()
+    elseif checkCollision(ball, player2) then
+        ball.x = player2.x - ball.width
+        ball.dx = -ball.dx * 1.03
+        sounds['bounce']:play()
+    end
+
+    -- Scoring
+    if ball.x < 0 then
+        player2Score = player2Score + 1
+        sounds['score']:play()
         resetBall()
-    end
-end
-
-function love.keypressed(key)
-    if key == 'escape' then
-        love.event.quit()
-    elseif key == 'space' then
+    elseif ball.x > WINDOW_WIDTH then
+        player1Score = player1Score + 1
+        sounds['score']:play()
         resetBall()
     end
 end
 
 function love.draw()
-    -- Background
-    love.graphics.clear(0.1, 0.1, 0.12)
+    love.graphics.setFont(scoreFont)
 
-    -- Center line
-    love.graphics.setLineWidth(2)
-    love.graphics.line(WINDOW_WIDTH / 2, 0, WINDOW_WIDTH / 2, WINDOW_HEIGHT)
+    -- Draw scores
+    love.graphics.printf(player1Score, 0, 20, WINDOW_WIDTH / 2, 'center')
+    love.graphics.printf(player2Score, WINDOW_WIDTH / 2, 20, WINDOW_WIDTH / 2, 'center')
 
-    -- Title + instructions
-    love.graphics.setFont(largeFont)
-    love.graphics.printf('PONG – Step 1', 0, 16, WINDOW_WIDTH, 'center')
-    love.graphics.setFont(smallFont)
-    love.graphics.printf('W/S and Up/Down to move. Space to reset.', 0, 44, WINDOW_WIDTH, 'center')
+    -- Draw paddles
+    love.graphics.rectangle('fill', player1.x, player1.y, player1.width, player1.height)
+    love.graphics.rectangle('fill', player2.x, player2.y, player2.width, player2.height)
 
-    -- Paddles
-    love.graphics.rectangle('fill', p1.x, p1.y, PADDLE_WIDTH, PADDLE_HEIGHT)
-    love.graphics.rectangle('fill', p2.x, p2.y, PADDLE_WIDTH, PADDLE_HEIGHT)
-
-    -- Ball
-    love.graphics.rectangle('fill', ball.x, ball.y, BALL_SIZE, BALL_SIZE)
+    -- Draw ball
+    love.graphics.rectangle('fill', ball.x, ball.y, ball.width, ball.height)
 end
+
+function checkCollision(a, b)
+    return a.x < b.x + b.width and
+           b.x < a.x + a.width and
+           a.y < b.y + b.height and
+           b.y < a.y + a.height
+end
+
+function resetBall()
+    ball.x = WINDOW_WIDTH / 2 - ball.width / 2
+    ball.y = WINDOW_HEIGHT / 2 - ball.height / 2
+    ball.dx = math.random(2) == 1 and 300 or -300
+    ball.dy = math.random(-50, 50)
+end
+
